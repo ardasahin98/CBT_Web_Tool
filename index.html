@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CBT Tool – Cyclic Behavior Type from CDSS Tests</title>
 <meta name="description" content="Compute cyclic test metrics and estimate cyclic behavior type (CBT) of fine-grained soils from cyclic direct simple shear test records.">
-<link rel="stylesheet" href="css/style.css?v=0.7">
+<link rel="stylesheet" href="css/style.css?v=0.8">
 <script src="vendor/plotly.min.js"></script>
 </head>
 <body>
@@ -37,16 +37,16 @@
       <a class="btn block" href="template/CBT_CDSS_Template.csv" download>Download CSV template</a>
       <div class="row">
         <span class="muted">Examples:</span>
-        <button class="btn sm" data-example="examples/Example_1.csv" disabled>Example 1</button>
-        <button class="btn sm" data-example="examples/Example_2.csv" disabled>Example 2</button>
-        <button class="btn sm" data-example="examples/Example_3.csv" disabled>Example 3</button>
+        <button class="btn sm" data-example="examples/Example_1.csv" data-units="min,psf,dec" title="Units: min, psf, decimal strain" disabled>Example 1</button>
+        <button class="btn sm" data-example="examples/Example_2.csv" data-units="s,kPa,%" title="Units: s, kPa, % strain" disabled>Example 2</button>
+        <button class="btn sm" data-example="examples/Example_3.csv" data-units="s,kPa,%" title="Units: s, kPa, % strain" disabled>Example 3</button>
       </div>
       <div class="units">
         <label>Time <select id="uTime"><option>s</option><option>min</option><option>h</option></select></label>
         <label>Stress <select id="uStress"><option>kPa</option><option>MPa</option><option>psf</option><option>psi</option><option>atm</option></select></label>
         <label>Strain <select id="uStrain"><option value="%">%</option><option value="dec">decimal</option></select></label>
       </div>
-      <div class="muted">One file per test, in the units above. See <a href="about.html#input">input format</a>.</div>
+      <div class="muted">Units apply to new uploads and the selected file. Ex. 1: min, psf, decimal; Ex. 2–3: s, kPa, %. See <a href="about.html#input">input format</a>.</div>
     </div>
   </div>
 
@@ -175,8 +175,8 @@
   </div>
 </main>
 
-<footer>CBT Tool · v0.7</footer>
+<footer>CBT Tool · v0.8</footer>
 
-<script src="js/app.js?v=0.7"></script>
+<script src="js/app.js?v=0.8"></script>
 </body>
 </html>

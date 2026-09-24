@@ -13,7 +13,7 @@ in the browser with Pyodide. There is no server, and uploaded files never leave 
 | `js/worker.js` | Web worker that starts Pyodide and calls the Python code |
 | `py/cbt_core.py` | Metric and CBT code. The top half is copied verbatim from `ngl_def_v2.py` (`Data_Smooth` … `ru_calc`, `Ns_calculation`, `three_point_curvature`); the bottom half adds hull ratio, Ratio_Δγ, κγ, CBT prediction and the analyst combination |
 | `data/models.json` | Posterior samples (4 chains × 1,000) of the final model for each of the 10 analysts |
-| `template/`, `examples/` | Input template and three example tests |
+| `template/`, `examples/` | Input template and three example tests (Example 1 in min, psf and decimal strain; Examples 2–3 in s, kPa and %) |
 | `vendor/` | Pyodide 0.29.3 (NumPy 2.2.5, SciPy 1.14.1) and Plotly 2.35.2, hosted locally so the site does not depend on a CDN |
 | `tools/build_models.py` | Rebuilds `models.json` from `../Bayesian_Results` |
 

@@ -84,7 +84,7 @@ function behaviorLabel(m) {
 /* ------------------------------------------------------------------ */
 /*  Worker                                                             */
 /* ------------------------------------------------------------------ */
-const worker = new Worker("js/worker.js?v=0.7");
+const worker = new Worker("js/worker.js?v=0.8");
 worker.onmessage = (e) => {
   const d = e.data;
   if (d.type === "progress") {
@@ -124,8 +124,8 @@ function pump() {
   const t = state.tests.find(x => x.status === "queued");
   if (!t) return;
   state.busy = true; t.status = "running"; renderFiles();
-  t.strainUnit = U.strain;
-  worker.postMessage({ type: "run", id: t.id, name: t.name, text: t.text, strainScale: strainScale() });
+  t.strainUnit = t.units.strain;
+  worker.postMessage({ type: "run", id: t.id, name: t.name, text: t.text, strainScale: t.units.strain === "dec" ? 100 : 1 });
 }
 function afterRun(t) {
   renderFiles();
@@ -135,26 +135,38 @@ function afterRun(t) {
 /* ------------------------------------------------------------------ */
 /*  Units                                                              */
 /* ------------------------------------------------------------------ */
-$("uTime").onchange = (e) => { U.time = e.target.value; refreshAll(); };
-$("uStress").onchange = (e) => { U.stress = e.target.value; refreshAll(); };
+// Each file keeps its own units. The dropdowns show the units of the selected file;
+// changing them updates that file (and is used for files uploaded next).
+const selectedTest = () => state.tests.find(t => t.id === state.current);
+function syncUnitSelects() { $("uTime").value = U.time; $("uStress").value = U.stress; $("uStrain").value = U.strain; }
+function applyUnitsToCurrent() { const t = selectedTest(); if (t) t.units = Object.assign({}, U); }
+$("uTime").onchange = (e) => { U.time = e.target.value; applyUnitsToCurrent(); refreshAll(); };
+$("uStress").onchange = (e) => { U.stress = e.target.value; applyUnitsToCurrent(); refreshAll(); };
+// strain changes the calculations: recompute the selected file
 $("uStrain").onchange = (e) => {
   U.strain = e.target.value;
-  // strain changes the calculations: recompute every uploaded test
-  state.tests.forEach(t => { if (t.status !== "queued") { t.status = "queued"; t.res = null; t.series = null; } });
-  renderFiles();
-  if (state.current !== null) selectTest(state.current);
-  pump();
+  const t = selectedTest();
+  if (t) {
+    t.units = Object.assign({}, U);
+    if (t.status !== "queued") { t.status = "queued"; t.res = null; t.series = null; }
+    renderFiles(); selectTest(t.id); pump();
+  }
 };
+// examples come in known units; loading one selects them
+function setUnits(time, stress, strain) {
+  U.time = time; U.stress = stress; U.strain = strain; syncUnitSelects();
+}
 
 /* ------------------------------------------------------------------ */
 /*  Files                                                              */
 /* ------------------------------------------------------------------ */
 let nextId = 1;
-function addTest(name, text) {
-  const t = { id: nextId++, name, text, status: "queued" };
+function addTest(name, text, select = false) {
+  const t = { id: nextId++, name, text, status: "queued", units: Object.assign({}, U) };
   state.tests.push(t);
-  if (state.current === null) state.current = t.id;
+  if (state.current === null || select) state.current = t.id;
   renderFiles(); pump();
+  if (select) selectTest(t.id);
 }
 function readFiles(files) {
   [...files].forEach(f => {
@@ -171,7 +183,8 @@ drop.addEventListener("drop", (e) => readFiles(e.dataTransfer.files));
 document.querySelectorAll("[data-example]").forEach(b => b.addEventListener("click", async () => {
   const url = b.dataset.example;
   const txt = await fetch(url).then(r => r.text());
-  addTest(url.split("/").pop(), txt);
+  if (b.dataset.units) setUnits(...b.dataset.units.split(","));
+  addTest(url.split("/").pop(), txt, true);
 }));
 
 // "cycle 126 (γDA = 9.01%)" – every cycle reference also states its double-amplitude strain
@@ -250,6 +263,7 @@ function selectTest(id) {
   renderFiles();
   const t = state.tests.find(x => x.id === id);
   if (!t) return showEmpty();
+  Object.assign(U, t.units); syncUnitSelects();   // labels follow the selected file's units
   $("emptyState").hidden = true; $("testView").hidden = false;
   if (t.status !== "done") {
     $("tName").textContent = t.name;
@@ -394,7 +408,7 @@ const stacked = () => window.innerWidth <= 900;
 function availFrom(el) {
   if (stacked()) return Infinity;
   const top = el.getBoundingClientRect().top + window.scrollY;
-  return Math.max(340, window.innerHeight - top - 14);
+  return Math.max(340, window.innerHeight - top - 22);
 }
 function setCols(grid, cols) { if (grid.dataset.cols !== String(cols)) grid.dataset.cols = cols; return cols; }
 function cellWidth(el) {
@@ -419,7 +433,7 @@ const REC_VERT = REC_MARGIN.t + REC_MARGIN.b + REC_MARGIN_2.t + REC_MARGIN_2.b;
 function squareReact(id, traces, layout) {
   const el = $(id), cellW = cellWidth(el);
   // fit both rows in the window, but never below a readable size (short windows scroll)
-  const maxSide = Math.min(Math.max((availFrom(el.parentElement) - 10 - REC_VERT) / 2, 220), 520);
+  const maxSide = Math.min(Math.max((availFrom(el.parentElement) - 10 - REC_VERT) / 2, 200), 520);
   let m = layout.margin;
   // a legend to the right needs room; if the cell is too narrow, put it below instead
   if (layout.legend && layout.legend.x > 1 && cellW - m.l - m.r < Math.min(maxSide, 300)) {
@@ -712,7 +726,7 @@ $("exportCycles").onclick = () => {
   const head = [...cols, "CBT_median", "CBT_p16", "CBT_p84", "CBT_mean", "mu_T", "sigma_T", "sigma_within", "sigma_between",
     ...act.flatMap(a => [`${a}_median`, `${a}_mu_T`, `${a}_sigma_T`])];
   const note = t.res.assessable ? "" : ` | CBT NOT ASSESSED: gamma_DA max ${fmt(t.res.gamma_DA_max, 2)}% < ${t.res.gamma_DA_min}%`;
-  const lines = [`# CBT Tool v0.7 | file: ${t.name} | units: time ${U.time}, stress ${U.stress}, strain % (input ${t.strainUnit === "dec" ? "decimal, converted" : "%"}) | analysts: ${act.join(" ")} | gamma_DA=9% cycle: ${t.res.target_cycle || "not reached"}${note}`, head.join(",")];
+  const lines = [`# CBT Tool v0.8 | file: ${t.name} | units: time ${U.time}, stress ${U.stress}, strain % (input ${t.strainUnit === "dec" ? "decimal, converted" : "%"}) | analysts: ${act.join(" ")} | gamma_DA=9% cycle: ${t.res.target_cycle || "not reached"}${note}`, head.join(",")];
   for (const c of t.res.cycles) {
     const cb = combine(c) || {};
     lines.push([...cols.map(k => csvVal(c[k])), csvVal(cb.median), csvVal(cb.p16), csvVal(cb.p84), csvVal(cb.mean), csvVal(cb.mu_T), csvVal(cb.sigma_T), csvVal(cb.sd_within), csvVal(cb.sd_between),
