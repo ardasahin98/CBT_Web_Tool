@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CBT Tool – Cyclic Behavior Type from CDSS Tests</title>
+<meta name="description" content="Compute cyclic test metrics and estimate cyclic behavior type (CBT) of fine-grained soils from cyclic direct simple shear test records.">
+<link rel="stylesheet" href="css/style.css?v=0.6">
+<script src="vendor/plotly.min.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <h1>Cyclic Behavior Type (CBT) Tool</h1>
+    <p>Test metrics and CBT estimation for cyclic direct simple shear tests on fine-grained soils</p>
+  </div>
+  <nav>
+    <a href="#tool">Tool</a>
+    <a href="about.html#input">Input format</a>
+    <a href="about.html#method">Method</a>
+    <a href="about.html#cite">Citation</a>
+  </nav>
+</header>
+
+<div id="loader" class="loader">
+  <span id="loaderText">Starting the calculation engine…</span>
+  <span class="bar"><i id="loaderBar"></i></span>
+  <span class="muted">First visit downloads ~30 MB (cached afterwards). Your data stays on your computer.</span>
+</div>
+
+<!-- ================= Control panel (horizontal) ================= -->
+<section class="controls" id="tool">
+  <div class="card">
+    <h2><span class="n">1</span>Prepare your data</h2>
+    <div class="stack small">
+      <a class="btn block" href="template/CBT_CDSS_Template.csv" download>Download CSV template</a>
+      <div class="row">
+        <span class="muted">Examples:</span>
+        <button class="btn sm" data-example="examples/Example_1.csv" disabled>Example 1</button>
+        <button class="btn sm" data-example="examples/Example_2.csv" disabled>Example 2</button>
+        <button class="btn sm" data-example="examples/Example_3.csv" disabled>Example 3</button>
+      </div>
+      <div class="muted">One file per CDSS test. See <a href="about.html#input">input format</a>.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span>Upload test files</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="fileInput" accept=".csv,.txt" multiple>
+      <strong>Drop CSV files here</strong> <span class="muted">or click to browse</span>
+    </label>
+    <ul class="files" id="fileList"></ul>
+  </div>
+
+  <div class="card">
+    <h2>Analyst models
+      <span class="h2-actions"><button class="btn sm" id="allAnalysts">All</button><button class="btn sm" id="noAnalysts">None</button></span>
+    </h2>
+    <div class="analysts" id="analystList"></div>
+    <div class="muted small" style="margin-top:6px">Combined CBT uses equal weights over the selected analysts.</div>
+  </div>
+
+  <div class="card">
+    <h2>Export</h2>
+    <button class="btn block" id="exportCycles" disabled>Per-cycle results (CSV)</button>
+    <div class="muted small" style="margin-top:6px">Metrics and CBT for every cycle of the selected test.</div>
+  </div>
+</section>
+
+<!-- ================= Workspace ================= -->
+<main class="workspace">
+  <div id="emptyState" class="card empty">
+    <h2>Estimate cyclic behavior type from a CDSS test</h2>
+    <p>CBT ranges from 0 (clay-like) to 1 (sand-like). It is estimated from test metrics computed for every loading cycle.</p>
+    <ol>
+      <li>Download the CSV template and fill in one file per test.</li>
+      <li>Upload one or more files (or load an example).</li>
+      <li>Review the metrics and CBT at the last cycle, or pick any other cycle.</li>
+    </ol>
+  </div>
+
+  <div id="testView" class="ws" hidden>
+    <!-- ---------- left: test, cycle, results ---------- -->
+    <div class="leftcol">
+      <div class="card">
+        <div class="testhead">
+          <h2 id="tName"></h2>
+          <div class="facts" id="tFacts"></div>
+        </div>
+        <div id="tBanner"></div>
+        <div class="cyclebar">
+          <div class="row nowrap">
+            <button class="btn sm" id="prevCyc" title="Previous cycle">◀</button>
+            <input type="range" id="cycSlider" min="1" max="1" value="1">
+            <button class="btn sm" id="nextCyc" title="Next cycle">▶</button>
+          </div>
+          <div class="row">
+            <label class="small">Cycle <input type="number" id="cycInput" min="1" value="1"></label>
+            <button class="btn sm" id="goLast">Last cycle</button>
+            <button class="btn sm" id="goTarget">First γ<sub>DA</sub> ≥ 9%</button>
+          </div>
+          <div class="cinfo" id="cycInfo"></div>
+        </div>
+      </div>
+
+      <div class="results">
+        <div class="card" id="cbtCard">
+          <h2>Combined CBT at <span id="rCycle"></span></h2>
+          <div class="cbt-big"><span class="v" id="rMedian">–</span><span class="l" id="rLabel"></span></div>
+          <div class="gauge" id="gauge">
+            <div class="track"></div><div class="band" id="gBand"></div><div class="med" id="gMed"></div>
+          </div>
+          <div class="gauge-labels"><span>0 · clay-like</span><span>0.5</span><span>sand-like · 1</span></div>
+          <div class="kv" id="rKV"></div>
+        </div>
+        <div class="card compact">
+          <h2>Metrics at <span id="mCycle"></span></h2>
+          <div class="metrics" id="metricGrid"></div>
+          <div class="metrics-legend">κ<sub>γ</sub>: whole record.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------- right: plots ---------- -->
+    <div class="rightcol card">
+      <div class="tabs" id="tabs">
+        <button data-tab="record" class="on">Test record</button>
+        <button data-tab="evol">Metrics vs. cycle</button>
+        <button data-tab="cbt">CBT</button>
+        <button data-tab="table">Analyst results</button>
+      </div>
+
+      <div class="tabpane on" id="tab-record">
+        <div class="recgrid">
+          <div class="plot" id="pLoop"></div>
+          <div class="plot" id="pPath"></div>
+          <div class="plot acc" id="pAcc"></div>
+          <div class="plot" id="pStrainT"></div>
+          <div class="plot" id="pRuT"></div>
+        </div>
+      </div>
+
+      <div class="tabpane" id="tab-evol">
+        <div class="grid2">
+          <div class="plot" id="eRu"></div>
+          <div class="plot" id="eHull"></div>
+          <div class="plot" id="eDg"></div>
+          <div class="plot" id="eGda"></div>
+        </div>
+      </div>
+
+      <div class="tabpane" id="tab-cbt">
+        <div class="row small" style="margin-bottom:8px">
+          <label><input type="checkbox" id="showAnalystLines" checked> Show individual analysts</label>
+          <label><input type="checkbox" id="logitSpace"> Distribution in logit space</label>
+        </div>
+        <div class="grid2">
+          <div class="plot" id="cEvol"></div>
+          <div class="plot" id="cPdf"></div>
+        </div>
+      </div>
+
+      <div class="tabpane" id="tab-table">
+        <div class="tblwrap"><table class="tbl" id="aTable"></table></div>
+        <p class="muted small">μ<sub>T</sub>, σ<sub>T</sub>: mean and standard deviation in logit space. σ<sub>T</sub> combines coefficient (posterior) uncertainty and the model standard deviation σ̂. Combined σ<sub>T</sub> adds the between-analyst term.</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>CBT Tool · v0.6</footer>
+
+<script src="js/app.js?v=0.6"></script>
+</body>
+</html>

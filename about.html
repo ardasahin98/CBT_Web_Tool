@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CBT Tool – Input format, method and citation</title>
+<meta name="description" content="Compute cyclic test metrics and estimate cyclic behavior type (CBT) of fine-grained soils from cyclic direct simple shear test records.">
+<link rel="stylesheet" href="css/style.css?v=0.6">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <h1>Cyclic Behavior Type (CBT) Tool</h1>
+    <p>Test metrics and CBT estimation for cyclic direct simple shear tests on fine-grained soils</p>
+  </div>
+  <nav>
+    <a href="index.html">Tool</a>
+    <a href="#input">Input format</a>
+    <a href="#method">Method</a>
+    <a href="#cite">Citation</a>
+  </nav>
+</header>
+
+<div class="doc" style="margin-top:6px">
+  <section id="input">
+    <h2>Input format</h2>
+    <p>A <a href="template/CBT_CDSS_Template.csv" download>CSV template</a> is available to download and fill in with the test data that you want to analyze. Use one CSV file per cyclic direct simple shear (CDSS) test or test stage. The first row is a header.</p>
+    <table class="tbl" style="max-width:720px">
+      <thead><tr><th>#</th><th style="text-align:left">Quantity</th><th style="text-align:left">Unit</th><th style="text-align:left">Notes</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td style="text-align:left">Time</td><td style="text-align:left">s</td><td style="text-align:left">Non-decreasing</td></tr>
+        <tr><td>2</td><td style="text-align:left">Shear stress, τ</td><td style="text-align:left">kPa</td><td style="text-align:left">Signed (positive and negative half-cycles)</td></tr>
+        <tr><td>3</td><td style="text-align:left">Vertical effective stress, σ′<sub>v</sub></td><td style="text-align:left">kPa</td><td style="text-align:left">First row = σ′<sub>v0</sub> at the start of cyclic loading</td></tr>
+        <tr><td>4</td><td style="text-align:left">Shear strain, γ</td><td style="text-align:left">%</td><td style="text-align:left">Signed</td></tr>
+        <tr><td>5</td><td style="text-align:left">Vertical strain</td><td style="text-align:left">%</td><td style="text-align:left">Optional; not used in calculations</td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>The record should start at the beginning of cyclic loading (after consolidation). Excess pore pressure ratio is computed as r<sub>u</sub> = (σ′<sub>v0</sub> − σ′<sub>v</sub>) / σ′<sub>v0</sub>, as in constant-volume CDSS tests.</li>
+      <li>Lines beginning with <code>#</code> are ignored.</li>
+      <li>Rows with missing values in columns 1–4 are skipped.</li>
+      <li>NGL database CDSS exports (<code>DSSS_TIME, DSSS_TAU, DSSS_SIGV, DSSS_YHV, DSSS_EPSV</code>) already use this layout.</li>
+      <li>The models were calibrated on stress-controlled CDSS tests on intact fine-grained specimens (FC &gt; 30%) with no initial static shear stress, carried to γ<sub>DA</sub> ≥ 9%. Tests that do not reach γ<sub>DA</sub> = 6% are not assessed. Use outside these conditions requires judgment.</li>
+    </ul>
+  </section>
+
+  <section id="method">
+    <h2>Method</h2>
+    <h3>Processing and cycle detection</h3>
+    <p>Stress, strain and vertical stress histories are interpolated in time with a monotonic Hermite cubic spline (SciPy <code>PchipInterpolator</code>), about 1,000 points per cycle. A cycle starts where shear stress crosses zero from negative to positive. Metrics are computed for every cycle.</p>
+
+    <h3>Metrics used by the CBT models</h3>
+    <ul>
+      <li><strong>r<sub>u,max</sub></strong>: maximum excess pore pressure ratio within the cycle.</li>
+      <li><strong>Ratio<sub>hull</sub> = A<sub>loop</sub> / A<sub>hull</sub></strong>: area under the stress–strain loop divided by the area of its convex hull. It decreases with pinching (sand-like response).</li>
+      <li><strong>Ratio<sub>Δγ</sub> = Δγ<sub>cyc</sub> / γ<sub>FC</sub></strong>: increase in maximum single-amplitude strain relative to the previous cycle, divided by the first-cycle maximum strain.</li>
+      <li><strong>κ<sub>γ</sub></strong>: three-point curvature of γ/γ<sub>s</sub> versus N/N<sub>s</sub> (γ<sub>s</sub> = 3% single amplitude), using points at 10%, 50% and 90% of the record. Positive values indicate accelerating strain accumulation.</li>
+    </ul>
+
+    <h3>Cycle for assessment</h3>
+    <p>The tool shows CBT at the last loading cycle by default; any other cycle can be selected. Ultimate hysteretic behavior tends to stabilize by the cycle in which the double-amplitude shear strain reaches 9%, so that cycle is marked for reference and tests that stop between 6% and 9% are flagged, because the estimate may understate sand-like behavior. If a test never reaches γ<sub>DA</sub> = 6%, CBT for fine-grained soils cannot be assessed and no CBT is reported because strain accumulation curvature cannot be calculated.</p>
+
+    <h3>Analyst models</h3>
+    <p>Ten analysts assigned CBT to 195 CDSS tests from the Next Generation Liquefaction database. For each analyst, the logit of CBT was regressed on a subset of the metrics with Bayesian inference (PyMC, 4 chains × 1,000 samples):</p>
+    <div class="eq">μ<sub>T</sub> = log[ CBT / (1 − CBT) ] = θ · X + σ̂ ε,&nbsp;&nbsp; ε ~ N(0, 1)</div>
+    <p>For a new test, every posterior sample s of analyst i gives μ<sub>s</sub> = θ<sub>s</sub> · [1, X]. The analyst's predictive distribution in logit space has mean μ<sub>i</sub> = mean(μ<sub>s</sub>) and variance σ<sub>i</sub><sup>2</sup> = var(μ<sub>s</sub>) + mean(σ̂<sub>s</sub><sup>2</sup>). Using all posterior samples keeps the correlation between the intercept and the metric coefficients.</p>
+
+    <h3>Combining analysts</h3>
+    <p>Analysts are combined in logit space with equal weights w<sub>i</sub> (Brandenberg and Pretell, 2024):</p>
+    <div class="eq">μ<sub>c</sub> = Σ w<sub>i</sub> μ<sub>i</sub>&nbsp;&nbsp;&nbsp;&nbsp; σ<sub>c</sub><sup>2</sup> = Σ w<sub>i</sub> σ<sub>i</sub><sup>2</sup> + Σ w<sub>i</sub> (μ<sub>i</sub> − μ<sub>c</sub>)<sup>2</sup></div>
+    <p>The first term is within-analyst uncertainty and the second is between-analyst (epistemic) uncertainty. The tool reports the median, the 16th–84th percentiles and the mean of this distribution. Individual models are developed for each analyst using a combination of the selected metrics. The metrics used in each analyst's resulting model are presented in the table below.</p>
+    <div class="tblwrap" style="max-width:640px"><table class="tbl"><thead><tr><th>Analyst</th><th style="text-align:left">Predictors (besides intercept)</th></tr></thead><tbody><tr><td>AJ</td><td style="text-align:left">Ratio<sub>hull</sub>, r<sub>u,max</sub></td></tr><tr><td>AS</td><td style="text-align:left">Ratio<sub>hull</sub>, r<sub>u,max</sub>, κ<sub>γ</sub></td></tr><tr><td>AWS</td><td style="text-align:left">Ratio<sub>hull</sub>, r<sub>u,max</sub></td></tr><tr><td>JPS</td><td style="text-align:left">Ratio<sub>hull</sub>, r<sub>u,max</sub>, Ratio<sub>Δγ</sub></td></tr><tr><td>KJU</td><td style="text-align:left">Ratio<sub>hull</sub>, r<sub>u,max</sub>, Ratio<sub>Δγ</sub></td></tr><tr><td>KOC</td><td style="text-align:left">Ratio<sub>hull</sub>, r<sub>u,max</sub>, κ<sub>γ</sub></td></tr><tr><td>SJB</td><td style="text-align:left">Ratio<sub>hull</sub>, r<sub>u,max</sub>, κ<sub>γ</sub></td></tr><tr><td>SLK</td><td style="text-align:left">Ratio<sub>hull</sub>, r<sub>u,max</sub></td></tr><tr><td>TME</td><td style="text-align:left">Ratio<sub>hull</sub>, r<sub>u,max</sub>, κ<sub>γ</sub></td></tr><tr><td>VR</td><td style="text-align:left">Ratio<sub>hull</sub>, r<sub>u,max</sub>, Ratio<sub>Δγ</sub></td></tr></tbody></table></div>
+  </section>
+
+  <section id="cite">
+    <h2>Citation</h2>
+    <p>Sahin, A., Renugah, V. N. S., Ulmer, K. J., Jana, A., Brandenberg, S. J., Cetin, K. O., Evans, T. M., Kramer, S. L., Stuedlein, A. W., and Stewart, J. P. <em>Cyclic Behavior Type Assessment Conditioned on Laboratory Test Metrics for Fine-grained Soils.</em> (in preparation).</p>
+    <p class="muted">All calculations run locally in your browser with Pyodide (Python + NumPy + SciPy). Uploaded files are not sent to any server. Contact: Arda Sahin, UCLA Civil and Environmental Engineering, <a href="mailto:arda120222@g.ucla.edu">arda120222@g.ucla.edu</a>.</p>
+  </section>
+</div>
+
+<footer>CBT Tool · v0.6</footer>
+</body>
+</html>
