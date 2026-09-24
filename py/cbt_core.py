@@ -330,7 +330,7 @@ TEMPLATE_COLUMNS = ["Time (s)", "Shear Stress (kPa)", "Vertical Effective Stress
 # -----------------------------------------------------------------------------
 #  Input
 # -----------------------------------------------------------------------------
-def read_template(text):
+def read_template(text, strain_scale=1.0):
     """Parse the CDSS template CSV. Columns are used by position:
     time (s), shear stress (kPa), vertical effective stress (kPa),
     shear strain (%) and, optionally, vertical strain (%).
@@ -359,8 +359,10 @@ def read_template(text):
         raise ValueError("Time must be non-decreasing.")
     n = len(arr)
     vol = np.nan_to_num(arr[:, 4])
+    # Stress and time units do not affect any metric (all use ratios), so they are
+    # used as given. Shear strain must be in percent; decimal strain is scaled by 100.
     return {"Test_Type": ["DSS"], "Time": t, "Shear_Stress": arr[:, 1],
-            "Normal_Stress": arr[:, 2], "Shear_Strain": arr[:, 3],
+            "Normal_Stress": arr[:, 2], "Shear_Strain": arr[:, 3] * float(strain_scale),
             "Volumetric_Strain": vol, "Pore_Pressure": np.zeros(n),
             "New_Time": [], "Effective_Stress": np.zeros(n)}
 
@@ -553,8 +555,8 @@ def predict_cycle(metrics, analysts=None, weights=None):
 _LAST = {}
 
 
-def run(text, name="test", weights=None):
-    raw = read_template(text)
+def run(text, name="test", weights=None, strain_scale=1.0):
+    raw = read_template(text, strain_scale)
     res = analyze(raw)
     for c in res["cycles"]:
         if res["assessable"]:

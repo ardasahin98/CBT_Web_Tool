@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CBT Tool – Cyclic Behavior Type from CDSS Tests</title>
 <meta name="description" content="Compute cyclic test metrics and estimate cyclic behavior type (CBT) of fine-grained soils from cyclic direct simple shear test records.">
-<link rel="stylesheet" href="css/style.css?v=0.6">
+<link rel="stylesheet" href="css/style.css?v=0.7">
 <script src="vendor/plotly.min.js"></script>
 </head>
 <body>
@@ -41,7 +41,12 @@
         <button class="btn sm" data-example="examples/Example_2.csv" disabled>Example 2</button>
         <button class="btn sm" data-example="examples/Example_3.csv" disabled>Example 3</button>
       </div>
-      <div class="muted">One file per CDSS test. See <a href="about.html#input">input format</a>.</div>
+      <div class="units">
+        <label>Time <select id="uTime"><option>s</option><option>min</option><option>h</option></select></label>
+        <label>Stress <select id="uStress"><option>kPa</option><option>MPa</option><option>psf</option><option>psi</option><option>atm</option></select></label>
+        <label>Strain <select id="uStrain"><option value="%">%</option><option value="dec">decimal</option></select></label>
+      </div>
+      <div class="muted">One file per test, in the units above. See <a href="about.html#input">input format</a>.</div>
     </div>
   </div>
 
@@ -108,7 +113,7 @@
       <div class="results">
         <div class="card" id="cbtCard">
           <h2>Combined CBT at <span id="rCycle"></span></h2>
-          <div class="cbt-big"><span class="v" id="rMedian">–</span><span class="l" id="rLabel"></span></div>
+          <div class="cbt-big"><span class="v" id="rMedian">–</span><span class="l" id="rNote"></span></div>
           <div class="gauge" id="gauge">
             <div class="track"></div><div class="band" id="gBand"></div><div class="med" id="gMed"></div>
           </div>
@@ -170,8 +175,8 @@
   </div>
 </main>
 
-<footer>CBT Tool · v0.6</footer>
+<footer>CBT Tool · v0.7</footer>
 
-<script src="js/app.js?v=0.6"></script>
+<script src="js/app.js?v=0.7"></script>
 </body>
 </html>

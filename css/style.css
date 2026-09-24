@@ -321,3 +321,30 @@ footer { padding: 4px 12px 12px; font-size: 12px; }
 /* header always visible */
 .topbar { position: sticky; top: 0; z-index: 50; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
 html { scroll-padding-top: 64px; }   /* anchors (#input, #method, #cite) land below the header */
+
+/* ================= v0.7: responsive plot grids (column count set by JS from panel width) ================= */
+.rightcol { container-type: inline-size; overflow: hidden; }
+.leftcol { min-width: 0; }
+.rightcol .plot { max-width: 100%; overflow: hidden; }
+.rightcol .recgrid { justify-content: center; column-gap: 16px; row-gap: 10px; }
+.rightcol .recgrid[data-cols="3"] { grid-template-columns: repeat(3, max-content); }
+.rightcol .recgrid[data-cols="3"] .acc { grid-column: 3; grid-row: 1 / span 2; align-self: center; justify-self: start; width: auto; }
+.rightcol .recgrid[data-cols="2"] { grid-template-columns: repeat(2, max-content); }
+.rightcol .recgrid[data-cols="2"] .acc { grid-column: 1 / span 2; grid-row: 3; justify-self: center; width: auto; }
+.rightcol .recgrid[data-cols="1"] { grid-template-columns: max-content; }
+.rightcol .recgrid[data-cols="1"] .acc { grid-column: 1; grid-row: auto; justify-self: start; width: auto; }
+.rightcol #tab-evol .grid2[data-cols="2"] { grid-template-columns: repeat(2, max-content); }
+.rightcol #tab-evol .grid2[data-cols="1"] { grid-template-columns: max-content; }
+.rightcol #tab-cbt .grid2 { justify-content: center; column-gap: 16px; }
+.rightcol #tab-cbt .grid2[data-cols="2"] { grid-template-columns: repeat(2, max-content); }
+.rightcol #tab-cbt .grid2[data-cols="1"] { grid-template-columns: max-content; }
+.rightcol .tblwrap { overflow-x: auto; }
+
+/* unit selectors */
+.units { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; color: var(--ink-2); }
+.units select { font: inherit; padding: 1px 3px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink); }
+
+@media (max-width: 1300px) { .controls { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .controls { grid-template-columns: 1fr; } }
+/* narrow screens: results panel above the plots */
+@media (max-width: 900px) { .ws { grid-template-columns: minmax(0, 1fr); } }

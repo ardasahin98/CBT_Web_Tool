@@ -8,6 +8,10 @@ const ANALYST_COLORS = {
 const METRIC_LABEL = { hull: "Ratio<sub>hull</sub>", ru: "r<sub>u,max</sub>", dgamma: "Ratio<sub>Δγ</sub>", kappa: "κ<sub>γ</sub>" };
 const METRIC_TXT = { hull: "Ratio_hull", ru: "r_u,max", dgamma: "Ratio_Δγ", kappa: "κ_γ" };
 
+// Units: stress and time are labels only (every metric uses stress or time ratios);
+// strain entered as a decimal is converted to percent before any calculation.
+const U = { time: "s", stress: "kPa", strain: "%" };
+const strainScale = () => (U.strain === "dec" ? 100 : 1);
 const state = {
   ready: false,
   tests: [],          // {id, name, text, status: queued|running|done|error, res, series, error}
@@ -80,7 +84,7 @@ function behaviorLabel(m) {
 /* ------------------------------------------------------------------ */
 /*  Worker                                                             */
 /* ------------------------------------------------------------------ */
-const worker = new Worker("js/worker.js?v=0.6");
+const worker = new Worker("js/worker.js?v=0.7");
 worker.onmessage = (e) => {
   const d = e.data;
   if (d.type === "progress") {
@@ -96,7 +100,8 @@ worker.onmessage = (e) => {
     const L = $("loader"); L.classList.add("fatal");
     $("loaderText").textContent = "Could not start the calculation engine: " + d.message;
   } else if (d.type === "result") {
-    const t = state.tests.find(x => x.id === d.id);
+    // ignore results that were superseded by a unit change while computing
+    const t = state.tests.find(x => x.id === d.id && x.status === "running");
     if (t) {
       t.res = JSON.parse(d.json);
       const L = d.buffer.byteLength / 4 / d.keys.length;
@@ -105,11 +110,11 @@ worker.onmessage = (e) => {
       t.status = "done";
       if (!state.analysts.length) initAnalysts(t.res.analyst_names, t.res.analyst_metrics);
     }
-    state.busy = false; afterRun(t); pump();
+    state.busy = false; if (t) afterRun(t); pump();
   } else if (d.type === "error") {
-    const t = state.tests.find(x => x.id === d.id);
+    const t = state.tests.find(x => x.id === d.id && x.status === "running");
     if (t) { t.status = "error"; t.error = d.message; }
-    state.busy = false; afterRun(t); pump();
+    state.busy = false; if (t) afterRun(t); pump();
   }
 };
 worker.postMessage({ type: "init" });
@@ -119,12 +124,27 @@ function pump() {
   const t = state.tests.find(x => x.status === "queued");
   if (!t) return;
   state.busy = true; t.status = "running"; renderFiles();
-  worker.postMessage({ type: "run", id: t.id, name: t.name, text: t.text });
+  t.strainUnit = U.strain;
+  worker.postMessage({ type: "run", id: t.id, name: t.name, text: t.text, strainScale: strainScale() });
 }
 function afterRun(t) {
   renderFiles();
   if (t && (state.current === null || state.current === t.id)) selectTest(t.id);
 }
+
+/* ------------------------------------------------------------------ */
+/*  Units                                                              */
+/* ------------------------------------------------------------------ */
+$("uTime").onchange = (e) => { U.time = e.target.value; refreshAll(); };
+$("uStress").onchange = (e) => { U.stress = e.target.value; refreshAll(); };
+$("uStrain").onchange = (e) => {
+  U.strain = e.target.value;
+  // strain changes the calculations: recompute every uploaded test
+  state.tests.forEach(t => { if (t.status !== "queued") { t.status = "queued"; t.res = null; t.series = null; } });
+  renderFiles();
+  if (state.current !== null) selectTest(state.current);
+  pump();
+};
 
 /* ------------------------------------------------------------------ */
 /*  Files                                                              */
@@ -261,7 +281,7 @@ function renderTest(full) {
   const csr = Math.max(...r.cycles.map(c => c.CSR_cycle || 0));
   $("tFacts").innerHTML = [
     `Cycles <b>${r.n_cycles}</b>`,
-    `σ′<sub>v0</sub> <b>${fmt(r.sv0, 1)} kPa</b>`,
+    `σ′<sub>v0</sub> <b>${fmtG(r.sv0)} ${U.stress}</b>`,
     `CSR <b>${fmt(csr, 3)}</b>`,
     `max γ<sub>DA</sub> <b>${fmt(gmax, 2)}%</b>`,
     `γ<sub>DA</sub>=9% cycle <b>${r.target_cycle || "not reached"}</b>`,
@@ -276,6 +296,9 @@ function renderTest(full) {
   if (!ok) warns.push(`<b>CBT for fine-grained soils cannot be assessed.</b> The test reached a maximum double-amplitude shear strain of ${fmt(gmax, 2)}%, below the required γ<sub>DA</sub> = ${r.gamma_DA_min}%. The test record and metrics are shown for reference only.`);
   else if (!r.reached_target) warns.push(`The test did not reach γ<sub>DA</sub> = 9% (maximum ${fmt(gmax, 2)}%). Ultimate hysteretic behavior may not have developed, so CBT may be understated.`);
   if (!r.curvature.reached) warns.push("γ<sub>SA</sub> = 3% was not reached, so κ<sub>γ</sub> is evaluated in time/absolute-strain space and is not comparable with the calibration data.");
+  const gsaMax = Math.max(...r.cycles.map(c => c.gamma_SA || 0));
+  if (t.strainUnit === "%" && gsaMax < 0.2) warns.push(`The largest shear strain is only ${fmtG(gsaMax)}%. If your file gives strain as a decimal (e.g. 0.03 for 3%), set <b>Strain</b> to <b>decimal</b> in box 1.`);
+  if (t.strainUnit === "dec" && gsaMax > 50) warns.push(`With strain set to <b>decimal</b>, the largest shear strain is ${fmtG(gsaMax)}%. If your file already gives strain in percent, set <b>Strain</b> to <b>%</b> in box 1.`);
   $("tBanner").innerHTML = warns.map((w, i) => `<div class="banner ${!ok && i === 0 ? "err" : "warn"}">${w}</div>`).join("");
   const s = $("cycSlider"); s.max = r.n_cycles; $("cycInput").max = r.n_cycles;
   $("goTarget").disabled = !r.target_cycle;
@@ -317,7 +340,7 @@ function renderCycleNow() {
   const cb = combine(c);
   if (cb) {
     $("rMedian").textContent = cb.median.toFixed(2);
-    $("rLabel").textContent = behaviorLabel(cb.median);
+    $("rNote").textContent = "";
     $("gBand").style.left = (cb.p16 * 100) + "%"; $("gBand").style.width = ((cb.p84 - cb.p16) * 100) + "%";
     $("gMed").style.left = (cb.median * 100) + "%";
     $("rKV").innerHTML = [
@@ -328,7 +351,7 @@ function renderCycleNow() {
       ["Analysts", `${cb.n} of ${state.analysts.length}`],
     ].map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("");
   } else {
-    $("rMedian").textContent = "–"; $("rLabel").textContent = "select at least one analyst";
+    $("rMedian").textContent = "–"; $("rNote").textContent = "select at least one analyst";
     $("gBand").style.width = 0; $("gMed").style.left = "-10px"; $("rKV").innerHTML = "";
   }
 
@@ -363,19 +386,22 @@ const baseLayout = (_unused, xt, yt, extra = {}) => Object.assign({
 const ax = (which, o) => Object.assign({}, baseLayout()[which], o);
 const legendBelow = (b = 110) => ({ showlegend: true, legend: { orientation: "h", x: 0, y: -0.2, yanchor: "top", font: { size: 11 } } });
 
-// Height from the top of an element to the bottom of the window (page unscrolled),
-// so every tab fits in one window at 100% zoom.
+// ---------- Responsive sizing ----------
+// Every plot is sized from the width of its own grid cell, so it can never spill
+// into neighbouring boxes. On wide screens plots are also limited so that a whole
+// tab fits in the window; when the page stacks (narrow screens) only width matters.
+const stacked = () => window.innerWidth <= 900;
 function availFrom(el) {
+  if (stacked()) return Infinity;
   const top = el.getBoundingClientRect().top + window.scrollY;
   return Math.max(340, window.innerHeight - top - 14);
 }
+function setCols(grid, cols) { if (grid.dataset.cols !== String(cols)) grid.dataset.cols = cols; return cols; }
 function cellWidth(el) {
   const grid = el.parentElement;
-  const cs = getComputedStyle(grid);
-  const cols = grid.classList.contains("recgrid") ? (window.innerWidth <= 1100 ? 2 : 3)
-    : (cs.gridTemplateColumns.split(" ").filter(Boolean).length || 1);
-  const gap = parseFloat(cs.columnGap) || 0;
-  return Math.floor((grid.clientWidth - gap * (cols - 1)) / cols) || 420;
+  const cols = +grid.dataset.cols || 1;
+  const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
+  return Math.max(140, Math.floor((grid.clientWidth - gap * (cols - 1)) / cols));
 }
 function fixedReact(id, traces, layout, w, h) {
   const el = $(id);
@@ -385,15 +411,22 @@ function fixedReact(id, traces, layout, w, h) {
   el.style.width = layout.width + "px"; el.style.height = layout.height + "px";
   Plotly.react(id, traces, layout, Object.assign({}, PCFG, { responsive: false }));
 }
-// Square plotting area; two rows of record plots must fit in the window.
+// Square plotting area; on wide screens both rows of record plots fit in the window.
 const REC_MARGIN = { l: 58, r: 14, t: 50, b: 46 };          // row 1 (legend above the plot)
 const REC_MARGIN_2 = { l: 58, r: 14, t: 50, b: 46 };       // row 2
 const REC_MARGIN_RL = (r) => ({ l: 58, r, t: 50, b: 46 });  // plots with the legend to the right
 const REC_VERT = REC_MARGIN.t + REC_MARGIN.b + REC_MARGIN_2.t + REC_MARGIN_2.b;
 function squareReact(id, traces, layout) {
-  const el = $(id), m = layout.margin;
-  // one common side length so both rows line up and fit in the window
-  const side = Math.max(180, Math.min(cellWidth(el) - m.l - m.r, (availFrom(el.parentElement) - 10 - REC_VERT) / 2));
+  const el = $(id), cellW = cellWidth(el);
+  // fit both rows in the window, but never below a readable size (short windows scroll)
+  const maxSide = Math.min(Math.max((availFrom(el.parentElement) - 10 - REC_VERT) / 2, 220), 520);
+  let m = layout.margin;
+  // a legend to the right needs room; if the cell is too narrow, put it below instead
+  if (layout.legend && layout.legend.x > 1 && cellW - m.l - m.r < Math.min(maxSide, 300)) {
+    layout.legend = Object.assign({}, legendBottom.legend, { x: 0, y: -0.2 });
+    m = layout.margin = { l: m.l, r: 14, t: m.t, b: 172 };
+  }
+  const side = Math.max(100, Math.min(cellW - m.l - m.r, maxSide));
   fixedReact(id, traces, layout, side + m.l + m.r, side + m.t + m.b);
 }
 const legendRight = { showlegend: true, legend: { orientation: "v", x: 1.03, xanchor: "left", y: 1, yanchor: "top", font: { size: 10.5 } } };
@@ -404,10 +437,18 @@ const legendInside = (pos = "tl") => ({ showlegend: true, legend: {
   y: pos[0] === "t" ? 0.98 : 0.02, yanchor: pos[0] === "t" ? "top" : "bottom",
   bgcolor: "rgba(255,255,255,0.85)", bordercolor: "#dfe3e9", borderwidth: 1, font: { size: 10.5 } } });
 let resizeTimer = null;
-window.addEventListener("resize", () => {
+function scheduleResize() {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (curTest()) renderCycleNow(); }, 150);
-});
+  resizeTimer = setTimeout(() => { if (curTest()) renderCycleNow(); }, 120);
+}
+window.addEventListener("resize", scheduleResize);
+if (window.ResizeObserver) {
+  let lastW = 0;
+  new ResizeObserver(entries => {
+    const w = Math.round(entries[0].contentRect.width);
+    if (w !== lastW) { lastW = w; scheduleResize(); }
+  }).observe(document.querySelector(".rightcol"));
+}
 
 function stride(arr, maxPts = 30000) {
   const k = Math.max(1, Math.ceil(arr.length / maxPts));
@@ -444,6 +485,8 @@ function ruRefTraces(orient, lo, hi, useRuValue) {
 }
 
 function renderRecordCycle(t, c) {
+  const grid = document.querySelector(".recgrid");
+  setCols(grid, grid.clientWidth >= 1080 ? 3 : grid.clientWidth >= 620 ? 2 : 1);
   const S = t.series, B = t._bg, r = t.res;
   const l1 = c.l1, l2 = c.l2;
   const reached = r.curvature.reached;
@@ -460,7 +503,7 @@ function renderRecordCycle(t, c) {
     { x: hx, y: hy, type: "scattergl", mode: "lines", name: `Convex hull (Ratio<sub>hull</sub> = ${fmt(c.hull, 3)})`,
       line: { color: "#e08a1e", width: 3.5 }, fill: "toself", fillcolor: "rgba(224,138,30,0.08)" },
     fg(slice(S.strain, l1, l2), slice(S.stress, l1, l2), cyc),
-  ], baseLayout(null, "Shear strain, γ (%)", "Shear stress, τ (kPa)", withLegend(REC_MARGIN, {}, "top")));
+  ], baseLayout(null, "Shear strain, γ (%)", `Shear stress, τ (${U.stress})`, withLegend(REC_MARGIN, {}, "top")));
 
   // 2. Stress path
   squareReact("pPath", [bg(B.svn, B.csr), fg(slice(S.sv_norm, l1, l2), slice(S.csr, l1, l2), cyc)],
@@ -469,8 +512,8 @@ function renderRecordCycle(t, c) {
 
   // 3. Shear strain (x) vs time (y)
   squareReact("pStrainT", [bg(B.strain, B.time), fg(slice(S.strain, l1, l2), slice(S.time, l1, l2), cyc)],
-    baseLayout(null, "Shear strain, γ (%)", "Time (s)", withLegend(REC_MARGIN_2, {
-      yaxis: ax("yaxis", { range: [0, tmax * 1.02], title: { text: "Time (s)", font: { size: 13 } } }) }, null)));
+    baseLayout(null, "Shear strain, γ (%)", `Time (${U.time})`, withLegend(REC_MARGIN_2, {
+      yaxis: ax("yaxis", { range: [0, tmax * 1.02], title: { text: `Time (${U.time})`, font: { size: 13 } } }) }, null)));
 
   // 4. σ'v/σ'v0 = 1 - r_u (bottom x) and r_u (top x, reversed) vs time
   const XR = [-0.05, 1.1];
@@ -478,16 +521,16 @@ function renderRecordCycle(t, c) {
     bg(B.svn, B.time), fg(slice(S.sv_norm, l1, l2), slice(S.time, l1, l2), cyc),
     ...ruRefTraces("v", 0, tmax * 1.02, false),
     { x: [1 - XR[0], 1 - XR[1]], y: [0, 0], xaxis: "x2", type: "scatter", mode: "markers", marker: { opacity: 0 }, hoverinfo: "skip", showlegend: false },
-  ], baseLayout(null, "", "Time (s)", withLegend(REC_MARGIN_RL(185), {
+  ], baseLayout(null, "", `Time (${U.time})`, withLegend(REC_MARGIN_RL(185), {
     xaxis: ax("xaxis", { range: XR, mirror: false, title: { text: "σ′<sub>v</sub> / σ′<sub>v0</sub> = 1 − r<sub>u</sub>", font: { size: 13 } } }),
     xaxis2: { overlaying: "x", side: "top", range: [1 - XR[0], 1 - XR[1]], title: { text: "r<sub>u</sub>", font: { size: 13 }, standoff: 4 },
               linecolor: "#c9cfd8", showgrid: false, zeroline: false, ticks: "outside" },
-    yaxis: ax("yaxis", { range: [0, tmax * 1.02], title: { text: "Time (s)", font: { size: 13 } } }),
+    yaxis: ax("yaxis", { range: [0, tmax * 1.02], title: { text: `Time (${U.time})`, font: { size: 13 } } }),
   }, "right")));
 
   // 5. Strain accumulation + kappa points
   const cv = r.curvature;
-  const xl = reached ? "N / N<sub>s</sub>" : "Time (s)";
+  const xl = reached ? "N / N<sub>s</sub>" : `Time (${U.time})`;
   const yl = reached ? "γ<sub>SA</sub> / 3%" : "max |γ| (%)";
   const e = Math.max(l1, l2 - 1);
   squareReact("pAcc", [
@@ -517,6 +560,8 @@ function paddedRange(vals) {
   return [lo - p, hi + p];
 }
 function renderEvol(t) {
+  const egrid = document.querySelector("#tab-evol .grid2");
+  setCols(egrid, egrid.clientWidth >= 820 ? 2 : 1);
   const cy = t.res.cycles.map(c => c.cycle);
   const n = cy.length;
   const hline = (v, name, color, dash) => ({ x: [0, n + 1], y: [v, v], type: "scatter", mode: "lines", name, line: { color, width: 1.8, dash }, hoverinfo: "name" });
@@ -524,8 +569,9 @@ function renderEvol(t) {
     const y = t.res.cycles.map(c => c[key]);
     const [lo, hi] = yr || paddedRange([...y, ...refs.map(r => r.y[0])]);
     const el = $(id);
-    const h = (availFrom(el.parentElement) - 10) / 2;
-    const w = Math.min(cellWidth(el), 1.45 * h);
+    const hAvail = (availFrom(el.parentElement) - 10) / 2;
+    const w = Math.min(cellWidth(el), 1.45 * hAvail, 760);
+    const h = Math.max(260, Math.min(hAvail, w / 1.45 + 40));
     fixedReact(id, [
       { x: cy, y, type: "scatter", mode: "markers", name: label, marker: { size: 6, color: "#2468a8", opacity: 0.85 } },
       { x: [state.cycle], y: [y[state.cycle - 1]], type: "scatter", mode: "markers", showlegend: false, hoverinfo: "y", marker: { size: 11, color: "#111" } },
@@ -544,15 +590,24 @@ function renderEvol(t) {
 
 const legendPacked = { showlegend: true, legend: { orientation: "v", x: 1.02, xanchor: "left", y: 1, yanchor: "top", font: { size: 10.5 } } };
 const CBT_MARGIN = { l: 58, r: 170, t: 24, b: 46 };
-// plotting area width = 2 x height
-function rectSize(id) {
-  const el = $(id), m = CBT_MARGIN;
-  let pw = cellWidth(el) - m.l - m.r, ph = pw / 2;
+// plotting area width = 2 x height; legend to the right, or below in narrow cells
+function cbtFrame(id) {
+  const narrow = cellWidth($(id)) < 560;
+  return narrow
+    ? { margin: { l: 58, r: 14, t: 24, b: 170 }, legend: { orientation: "h", x: 0, y: -0.25, yanchor: "top", entrywidth: 0.33, entrywidthmode: "fraction", font: { size: 10.5 } } }
+    : { margin: Object.assign({}, CBT_MARGIN), legend: legendPacked.legend };
+}
+function rectSize(id, m) {
+  const el = $(id);
+  let pw = Math.min(cellWidth(el) - m.l - m.r, 900), ph = pw / 2;
   const avail = availFrom(el.parentElement);
-  if (ph + m.t + m.b > avail) { ph = avail - m.t - m.b; pw = 2 * ph; }
+  if (ph + m.t + m.b > avail) { ph = Math.max(170, avail - m.t - m.b); pw = Math.min(pw, 2 * ph); ph = pw / 2; }
   return [pw + m.l + m.r, ph + m.t + m.b];
 }
 function renderCBT(t) {
+  const cgrid = document.querySelector("#tab-cbt .grid2");
+  setCols(cgrid, cgrid.clientWidth >= 1000 ? 2 : 1);
+  const fE = cbtFrame("cEvol"), fP = cbtFrame("cPdf");
   const cycles = t.res.cycles;
   const gda = cycles.map(c => c.gamma_DA);
   const comb = cycles.map(c => combine(c));
@@ -574,9 +629,9 @@ function renderCBT(t) {
   if (gT !== null) notes.push({ x: gT, y: 1, yanchor: "bottom", xanchor: "left", text: `First γ<sub>DA</sub> ≥ 9%`, showarrow: false, font: { size: 10.5, color: "#2e7d4f" } });
   const gx = paddedRange(gda);
   fixedReact("cEvol", traces, baseLayout(null, "Double-amplitude shear strain, γ<sub>DA</sub> (%)", "CBT", Object.assign({
-    margin: Object.assign({}, CBT_MARGIN),
+    margin: fE.margin,
     xaxis: ax("xaxis", { range: [Math.max(0, gx[0]), gx[1]], title: { text: "Double-amplitude shear strain, γ<sub>DA</sub> (%)", font: { size: 13 } } }),
-    yaxis: ax("yaxis", { range: [0, 1], title: { text: "CBT", font: { size: 13 } } }), annotations: notes }, legendPacked)), ...rectSize("cEvol"));
+    yaxis: ax("yaxis", { range: [0, 1], title: { text: "CBT", font: { size: 13 } } }), annotations: notes }, { showlegend: true, legend: fE.legend })), ...rectSize("cEvol", fE.margin));
 
   // distribution at current cycle
   const c = cycles[state.cycle - 1];
@@ -605,10 +660,10 @@ function renderCBT(t) {
     pd.push({ x: xs, y: yc, type: "scatter", mode: "lines", name: `Combined,<br>${cycLabel(t, state.cycle)}`, line: { color: "#14283f", width: 3.5 } });
   }
   fixedReact("cPdf", pd, baseLayout(null, lg ? "logit(CBT)" : "CBT", "Probability density", Object.assign({
-    margin: Object.assign({}, CBT_MARGIN),
+    margin: fP.margin,
     xaxis: ax("xaxis", lg ? { title: { text: "logit(CBT)", font: { size: 13 } } } : { range: [0, 1], title: { text: "CBT", font: { size: 13 } } }),
     yaxis: ax("yaxis", Object.assign({ title: { text: "Probability density", font: { size: 13 } } }, ymax ? { range: [0, ymax] } : {})),
-  }, legendPacked)), ...rectSize("cPdf"));
+  }, { showlegend: true, legend: fP.legend })), ...rectSize("cPdf", fP.margin));
 }
 $("showAnalystLines").onchange = () => { const t = curTest(); if (t) renderCBT(t); };
 $("logitSpace").onchange = () => { const t = curTest(); if (t) renderCBT(t); };
@@ -657,7 +712,7 @@ $("exportCycles").onclick = () => {
   const head = [...cols, "CBT_median", "CBT_p16", "CBT_p84", "CBT_mean", "mu_T", "sigma_T", "sigma_within", "sigma_between",
     ...act.flatMap(a => [`${a}_median`, `${a}_mu_T`, `${a}_sigma_T`])];
   const note = t.res.assessable ? "" : ` | CBT NOT ASSESSED: gamma_DA max ${fmt(t.res.gamma_DA_max, 2)}% < ${t.res.gamma_DA_min}%`;
-  const lines = [`# CBT Tool v0.2 | file: ${t.name} | analysts: ${act.join(" ")} | gamma_DA=9% cycle: ${t.res.target_cycle || "not reached"}${note}`, head.join(",")];
+  const lines = [`# CBT Tool v0.7 | file: ${t.name} | units: time ${U.time}, stress ${U.stress}, strain % (input ${t.strainUnit === "dec" ? "decimal, converted" : "%"}) | analysts: ${act.join(" ")} | gamma_DA=9% cycle: ${t.res.target_cycle || "not reached"}${note}`, head.join(",")];
   for (const c of t.res.cycles) {
     const cb = combine(c) || {};
     lines.push([...cols.map(k => csvVal(c[k])), csvVal(cb.median), csvVal(cb.p16), csvVal(cb.p84), csvVal(cb.mean), csvVal(cb.mu_T), csvVal(cb.sigma_T), csvVal(cb.sd_within), csvVal(cb.sd_between),

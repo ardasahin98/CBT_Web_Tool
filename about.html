@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CBT Tool – Input format, method and citation</title>
 <meta name="description" content="Compute cyclic test metrics and estimate cyclic behavior type (CBT) of fine-grained soils from cyclic direct simple shear test records.">
-<link rel="stylesheet" href="css/style.css?v=0.6">
+<link rel="stylesheet" href="css/style.css?v=0.7">
 </head>
 <body>
 
@@ -29,15 +29,16 @@
     <table class="tbl" style="max-width:720px">
       <thead><tr><th>#</th><th style="text-align:left">Quantity</th><th style="text-align:left">Unit</th><th style="text-align:left">Notes</th></tr></thead>
       <tbody>
-        <tr><td>1</td><td style="text-align:left">Time</td><td style="text-align:left">s</td><td style="text-align:left">Non-decreasing</td></tr>
-        <tr><td>2</td><td style="text-align:left">Shear stress, τ</td><td style="text-align:left">kPa</td><td style="text-align:left">Signed (positive and negative half-cycles)</td></tr>
-        <tr><td>3</td><td style="text-align:left">Vertical effective stress, σ′<sub>v</sub></td><td style="text-align:left">kPa</td><td style="text-align:left">First row = σ′<sub>v0</sub> at the start of cyclic loading</td></tr>
-        <tr><td>4</td><td style="text-align:left">Shear strain, γ</td><td style="text-align:left">%</td><td style="text-align:left">Signed</td></tr>
-        <tr><td>5</td><td style="text-align:left">Vertical strain</td><td style="text-align:left">%</td><td style="text-align:left">Optional; not used in calculations</td></tr>
+        <tr><td>1</td><td style="text-align:left">Time</td><td style="text-align:left">s, min or h</td><td style="text-align:left">Non-decreasing</td></tr>
+        <tr><td>2</td><td style="text-align:left">Shear stress, τ</td><td style="text-align:left">kPa, MPa, psf, psi or atm</td><td style="text-align:left">Signed (positive and negative half-cycles)</td></tr>
+        <tr><td>3</td><td style="text-align:left">Vertical effective stress, σ′<sub>v</sub></td><td style="text-align:left">same unit as τ</td><td style="text-align:left">First row = σ′<sub>v0</sub> at the start of cyclic loading</td></tr>
+        <tr><td>4</td><td style="text-align:left">Shear strain, γ</td><td style="text-align:left">% or decimal</td><td style="text-align:left">Signed</td></tr>
+        <tr><td>5</td><td style="text-align:left">Vertical strain</td><td style="text-align:left">any</td><td style="text-align:left">Optional; not used in calculations</td></tr>
       </tbody>
     </table>
     <ul>
       <li>The record should start at the beginning of cyclic loading (after consolidation). Excess pore pressure ratio is computed as r<sub>u</sub> = (σ′<sub>v0</sub> − σ′<sub>v</sub>) / σ′<sub>v0</sub>, as in constant-volume CDSS tests.</li>
+      <li>Units are selected in the tool (box 1) and apply to all uploaded files. Stress and time units only change the plot labels, because every metric uses stress or time ratios (r<sub>u</sub>, τ/σ′<sub>v0</sub>, Ratio<sub>hull</sub>, N/N<sub>s</sub>). Shear strain entered as a decimal (e.g. 0.03) is converted to percent before any calculation, because the strain thresholds (γ<sub>DA</sub> = 6% and 9%, γ<sub>s</sub> = 3%) are defined in percent; results are always shown in percent.</li>
       <li>Lines beginning with <code>#</code> are ignored.</li>
       <li>Rows with missing values in columns 1–4 are skipped.</li>
       <li>NGL database CDSS exports (<code>DSSS_TIME, DSSS_TAU, DSSS_SIGV, DSSS_YHV, DSSS_EPSV</code>) already use this layout.</li>
@@ -80,6 +81,6 @@
   </section>
 </div>
 
-<footer>CBT Tool · v0.6</footer>
+<footer>CBT Tool · v0.7</footer>
 </body>
 </html>

@@ -45,8 +45,8 @@ def _clean(o):
         return _clean(o.tolist())
     return o
 
-def _run_for_js(txt, nm):
-    res, ser = cbt_core.run(txt, nm)
+def _run_for_js(txt, nm, sc):
+    res, ser = cbt_core.run(txt, nm, strain_scale=sc)
     keys = list(ser.keys())
     buf = np.stack([np.asarray(ser[k], dtype=np.float32) for k in keys]).tobytes()
     return json.dumps(_clean(res)), keys, buf
@@ -54,10 +54,10 @@ def _run_for_js(txt, nm):
   post("ready", {});
 }
 
-async function runTest(id, name, text) {
+async function runTest(id, name, text, strainScale) {
   try {
     const fn = pyodide.globals.get("_run_for_js");
-    const out = fn(text, name);
+    const out = fn(text, name, strainScale || 1.0);
     const [json, keysPy, bufPy] = out.toJs({ depth: 1 });
     const keys = keysPy.toJs ? keysPy.toJs() : Array.from(keysPy);
     const bytes = bufPy.toJs ? bufPy.toJs() : bufPy;
@@ -77,6 +77,6 @@ self.onmessage = async (e) => {
   if (d.type === "init") {
     try { await init(); } catch (err) { post("fatal", { message: String(err) }); }
   } else if (d.type === "run") {
-    await runTest(d.id, d.name, d.text);
+    await runTest(d.id, d.name, d.text, d.strainScale);
   }
 };
